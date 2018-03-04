@@ -5,6 +5,7 @@ import socket
 # import RPi.GPIO as GPIO
 import os
 import time
+import serial	# install pySerial
 from pathlib import Path
 
 PYTHON_SERVER_PORT = 50000
@@ -23,6 +24,7 @@ relay = 0  # relay turned off
 timeout = 0
 counter = 0
 
+port = serial.Serial("/dev/ttyS3", baudrate=115200, timeout= 1)  # init UART communication with Arduino S3 -> UART #3
 
 def movies(num):
     """Thread omxplayer-raspberryPI (mpv - orangePI) function"""
@@ -42,6 +44,7 @@ def movies(num):
 # Put the code you want to do something based on when you get data here.
 def onData(data, sock, client_address):
     global counter
+	# global port
     #    print("Python got data: " + data.decode("utf-8"))
     msg = data.decode("utf-8")
     #    print(msg)
@@ -71,8 +74,11 @@ def onData(data, sock, client_address):
             if (val < 256) and (val > 0):   # LED PWM 0-255
                 #               print("LED set to -> " + strval)
                 sock.sendto(("LED set to -> " + strval).encode(), (client_address[0], 50001))
+				msg = "LED " + strval + "\n"
+                port.write(msg)
             elif val == 0:
                 sock.sendto("LED TURNED OFF: value is set to 0".encode(), (client_address[0], 50001))
+				port.write("LED 0\n")
                 #                print("LED TURNED OFF: value is set to 0")
                 #           else:
                 #                print("Wrong LED value")
