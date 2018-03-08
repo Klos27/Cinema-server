@@ -20,10 +20,11 @@ gpio.init()  # initialize the gpio module
 PYTHON_SERVER_PORT = 50000
 PYTHON_SERVER_IP = "192.168.200.194"  # Type there server's ip
 
-port_serial = serial.Serial("/dev/ttyS3", baudrate=115200, timeout=1)  # init UART communication with Arduino S3 -> UART #3
+serial_port = serial.Serial("/dev/ttyS3", baudrate=115200, timeout=1)  # init UART communication with Arduino S3 -> UART #3
 
 os.system('killall -15 mpv')
-
+home_dir = str(Path.home())  # get path to user's home directory or type there full path
+movie = 0   # movie number
 counter = 0  # for tests only
 
 """
@@ -99,9 +100,6 @@ for i in range(0, 10):
     # gpio.pullup(relays[i].port, gpio.PULLUP)
 
 
-movie = 0   # movie number
-
-
 def switch_relay(rel):
     if rel.state:
         rel.state = False
@@ -132,14 +130,15 @@ def handle_preset(pst_no):
 
 def movies(num):
     global movie
+    global home_dir
     # This function runs in another thread
     # mpv - orangePI player (for RaspberryPI use omxplayer)
-    my_file = Path('/home/agstakino/Videos/' + num + '.mp4')
+    my_file = Path(home_dir + '/Videos/' + num + '.mp4')
     if my_file.is_file():
         movie = num
         os.system(
             'mpv --loop --no-audio --no-sub --fullscreen --no-osc --osd-level=0 --term-osd=force '
-            '/home/agstakino/Videos/' + num + '.mp4')
+            + home_dir + '/Videos/' + num + '.mp4')
     else:
         print("No such file")
     return
@@ -148,8 +147,10 @@ def movies(num):
 # Put the code you want to do something based on when you get data here.
 def on_data(data, sock, client_address):
     global counter
-    # global port_serial
-    # print("Python got data: " + data.decode("utf-8"))
+    global home_dir
+    global inputs
+    global relays
+    global serial_port
     msg = data.decode("utf-8")
     # print(msg)
     # print("client_addr: ", client_address)
@@ -160,7 +161,7 @@ def on_data(data, sock, client_address):
         val = int(strval)
         if cmd == "MOV":
             if (val <= 10) and (val > 0):  # 9 movies from 1.mp4 to 10.mp4 to show on projector
-                my_file = Path('/home/agstakino/Videos/' + strval + '.mp4')
+                my_file = Path(home_dir + '/Videos/' + strval + '.mp4')
                 if my_file.is_file():  # start movie only if file exists
                     os.system('killall -15 mpv')
                     t = threading.Thread(target=movies(strval))
@@ -176,10 +177,10 @@ def on_data(data, sock, client_address):
             if (val < 256) and (val > 0):  # LED PWM 0-255
                 sock.sendto(("LED set to -> " + strval).encode(), (client_address[0], 50001))
                 msg = "LED " + strval + "\n"
-                port_serial.write(msg)
+                serial_port.write(msg)
             elif val == 0:
                 sock.sendto("LED TURNED OFF: value is set to 0".encode(), (client_address[0], 50001))
-                port_serial.write("LED 0\n")
+                serial_port.write("LED 0\n")
         elif cmd[:3] == "REL":
             rel_no = int(cmd[3:5])  # cmd like REL05 for relays_no 00-99
             if val == 0:
