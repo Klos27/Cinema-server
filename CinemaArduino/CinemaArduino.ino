@@ -1,4 +1,3 @@
-6
 #define LEDPIN 6 // Analog output pin that the LED is attached to
 #define LEDRELAY 8  // for LED PowerSupply
 volatile int _brightVal;  // Brightness value ( 0 to 255 )
