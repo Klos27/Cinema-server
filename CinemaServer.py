@@ -26,6 +26,8 @@ os.system('killall -15 mpv')
 home_dir = str(Path.home())  # get path to user's home directory or type there full path
 movie = 0   # movie number
 counter = 0  # for tests only
+ledSwtich = 0   # LED relay status
+ledValue = 128  # LED PWM value
 
 """
 Relays for OrangePI
@@ -120,12 +122,36 @@ def turn_off_relay(rel):
 
 
 def handle_preset(pst_no):
-    if pst_no == 0:  # turn off everything
-        for i in range(1, 10):  # exclude relay0 (projector)
+    if pst_no == 1:
+        for i in range(1, 4):  # exclude relay0 (projector)
+            turn_on_relay(relays[i])
+        for i in range(4, 10):
             turn_off_relay(relays[i])
-    elif pst_no == 1:  # turn on everything
+    elif pst_no == 2:
+        for i in range(4, 6):  # exclude relay0 (projector)
+            turn_on_relay(relays[i])
+        for i in range(1, 4):
+            turn_off_relay(relays[i])
+        for i in range(6, 10):
+            turn_off_relay(relays[i])
+    elif pst_no == 3:
+        for i in range(6, 8):  # exclude relay0 (projector)
+            turn_on_relay(relays[i])
+        for i in range(1, 6):
+            turn_off_relay(relays[i])
+        for i in range(8, 10):
+            turn_off_relay(relays[i])
+    elif pst_no == 4:
+        for i in range(8, 10):  # exclude relay0 (projector)
+            turn_on_relay(relays[i])
+        for i in range(1, 8):
+            turn_off_relay(relays[i])
+    elif pst_no == 10:  # turn on everything
         for i in range(1, 10):
             turn_on_relay(relays[i])
+    elif pst_no == 11:  # turn off everything
+        for i in range(1, 10):  # exclude relay0 (projector)
+            turn_off_relay(relays[i])
 
 
 def movies(num):
@@ -151,6 +177,8 @@ def on_data(data, sock, client_address):
     global inputs
     global relays
     global serial_port
+    global ledSwtich
+    global ledValue
     msg = data.decode("utf-8")
     # print(msg)
     # print("client_addr: ", client_address)
@@ -161,6 +189,7 @@ def on_data(data, sock, client_address):
         val = int(strval)
         if cmd == "MOV":
             if (val <= 10) and (val > 0):  # 9 movies from 1.mp4 to 10.mp4 to show on projector
+                movie = val
                 my_file = Path(home_dir + '/Videos/' + strval + '.mp4')
                 if my_file.is_file():  # start movie only if file exists
                     os.system('killall -15 mpv')
@@ -173,36 +202,47 @@ def on_data(data, sock, client_address):
             elif val == 0:
                 turn_off_relay(relays[0])
                 os.system('killall -15 mpv')
+                movie = 0
         elif cmd == "LED":
             if (val < 256) and (val > 0):  # LED PWM 0-255
-                sock.sendto(("LED set to -> " + strval).encode(), (client_address[0], 50001))
+                # sock.sendto(("LED set to -> " + strval).encode(), (client_address[0], 50001))
                 msg = "LED " + strval + "\n"
                 serial_port.write(msg)
+                ledSwtich = 1
+                ledValue = strval
             elif val == 0:
-                sock.sendto("LED TURNED OFF: value is set to 0".encode(), (client_address[0], 50001))
+                # sock.sendto("LED TURNED OFF: value is set to 0".encode(), (client_address[0], 50001))
                 serial_port.write("LED 0\n")
+                ledSwtich = 0
+                ledValue = 0
         elif cmd[:3] == "REL":
             rel_no = int(cmd[3:5])  # cmd like REL05 for relays_no 00-99
-            if val == 0:
-                turn_off_relay(relays[rel_no])
-            elif val == 1:
-                turn_on_relay(relays[rel_no])
-            elif val == 2:
-                switch_relay(relays[rel_no])
+            if rel_no == 0: # switch led
+                if val == 0:
+                    serial_port.write("REL 0\n")
+                    ledSwtich = 0
+                else:
+                    serial_port.write("REL 1\n")
+                    ledSwtich = 1
+            else:
+                if val == 0:
+                    turn_off_relay(relays[rel_no])
+                elif val == 1:
+                    turn_on_relay(relays[rel_no])
+                elif val == 2:
+                    switch_relay(relays[rel_no])
         elif cmd[:3] == "PST":
             preset_no = int(cmd[3:5])  # cmd like PST05 for preset 00-99
             handle_preset(preset_no)
     except ValueError:
-        if msg == "state":
-            msg_to_sent = "state;"
-            for i in range(0, 10):
-                if relays[i].state:
-                    msg_to_sent += "1;"
-                else:
-                    msg_to_sent += "0;"
-            msg_to_sent += "mov;"
+        if msg == "STATUS":
+            msg_to_sent = "status;"
+            msg_to_sent += str(ledSwtich) + ";" + str(ledValue) + ";"
+            for i in range(1, 10):
+                msg_to_sent += str(relays[i].state) + ";"
+            msg_to_sent += "movie;"
             msg_to_sent += str(movie)
-            # send system state code: state;rel1;rel2;...;mov;movie_number
+            # send system state code: Status;rel1;rel2;...;movie;movie_number
             sock.sendto(msg_to_sent.encode(), (client_address[0], 50001))
         # else:
             # print("Oops!  That was no valid number.  Try again...")
