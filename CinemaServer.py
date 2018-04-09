@@ -1,7 +1,4 @@
 #!/usr/bin/python
-# TODO List:
-# TODO add rising-edge caption for switches
-
 import threading
 import socketserver
 import socket
@@ -18,7 +15,7 @@ from pyA20.gpio import port  # OrangePI
 gpio.init()  # initialize the gpio module
 
 PYTHON_SERVER_PORT = 50000
-PYTHON_SERVER_IP = "192.168.200.194"  # Type there server's ip
+PYTHON_SERVER_IP = "192.168.200.50"  # Type there server's ip
 
 serial_port = serial.Serial("/dev/ttyS3", baudrate=115200, timeout=1)  # init UART communication with Arduino S3 -> UART #3
 
@@ -26,7 +23,7 @@ os.system('killall -15 mpv')
 home_dir = str(Path.home())  # get path to user's home directory or type there full path
 movie = 0   # movie number
 counter = 0  # for tests only
-ledSwtich = 0   # LED relay status
+ledSwitch = 0   # LED relay status
 ledValue = 128  # LED PWM value
 
 """
@@ -80,6 +77,7 @@ relays = [
 # setup the relays ports
 for i in range(0, 10):
     gpio.setcfg(relays[i].port, gpio.OUTPUT)
+    gpio.output(relays[i].port, gpio.HIGH)
 
 # Inputs (switches) list:
 inputs = [
@@ -92,13 +90,13 @@ inputs = [
     port.PA8,
     port.PA9,
     port.PA10,
-    port.PA20,
+    port.PA20
 ]
 
 # setup the inputs ports
-for i in range(0, 10):
-    gpio.setcfg(relays[i].port, gpio.INPUT)
-    gpio.pullup(relays[i].port, gpio.PULLDOWN)  # Enable pulldown resistor
+for i in range(1, 10):
+    gpio.setcfg(inputs[i], gpio.INPUT)
+    gpio.pullup(inputs[i], gpio.PULLDOWN)  # Enable pulldown resistor
     # gpio.pullup(relays[i].port, gpio.PULLUP)
 
 
@@ -122,18 +120,26 @@ def turn_off_relay(rel):
 
 
 def handle_preset(pst_no):
+    global relays
+    global ledSwitch
+    global ledValue
     if pst_no == 1:
         for i in range(1, 4):  # exclude relay0 (projector)
             turn_on_relay(relays[i])
         for i in range(4, 10):
             turn_off_relay(relays[i])
+        serial_port.write("REL 0\n".encode())
+        ledSwitch = 0
     elif pst_no == 2:
         for i in range(4, 6):  # exclude relay0 (projector)
             turn_on_relay(relays[i])
         for i in range(1, 4):
             turn_off_relay(relays[i])
         for i in range(6, 10):
-            turn_off_relay(relays[i])
+            turn_off_relay(relays[i])	
+        serial_port.write("LED 128\n".encode())
+        ledSwitch = 1
+        ledValue = 128
     elif pst_no == 3:
         for i in range(6, 8):  # exclude relay0 (projector)
             turn_on_relay(relays[i])
@@ -141,17 +147,25 @@ def handle_preset(pst_no):
             turn_off_relay(relays[i])
         for i in range(8, 10):
             turn_off_relay(relays[i])
+        serial_port.write("REL 0\n".encode())
+        ledSwitch = 0
     elif pst_no == 4:
         for i in range(8, 10):  # exclude relay0 (projector)
             turn_on_relay(relays[i])
         for i in range(1, 8):
             turn_off_relay(relays[i])
+        serial_port.write("REL 0\n".encode())
+        ledSwitch = 0
     elif pst_no == 10:  # turn on everything
         for i in range(1, 10):
             turn_on_relay(relays[i])
+        serial_port.write("REL 1\n".encode())
+        ledSwitch = 1
     elif pst_no == 11:  # turn off everything
         for i in range(1, 10):  # exclude relay0 (projector)
             turn_off_relay(relays[i])
+        serial_port.write("REL 0\n".encode())
+        ledSwitch = 0
 
 
 def movies(num):
@@ -177,10 +191,10 @@ def on_data(data, sock, client_address):
     global inputs
     global relays
     global serial_port
-    global ledSwtich
+    global ledSwitch
     global ledValue
+    global movie
     msg = data.decode("utf-8")
-    # print(msg)
     # print("client_addr: ", client_address)
     # sock.sendto(data, (client_address[0], 50001))     #ECHO SERVER
     try:
@@ -189,16 +203,16 @@ def on_data(data, sock, client_address):
         val = int(strval)
         if cmd == "MOV":
             if (val <= 10) and (val > 0):  # 9 movies from 1.mp4 to 10.mp4 to show on projector
-                movie = val
                 my_file = Path(home_dir + '/Videos/' + strval + '.mp4')
                 if my_file.is_file():  # start movie only if file exists
+                    movie = val
+                    if relays[0].state == False:
+                        # add some latency there if needed
+                        # time.sleep(2)  # 2sec latency
+                        turn_on_relay(relays[0]) 
                     os.system('killall -15 mpv')
                     t = threading.Thread(target=movies(strval))
                     t.start()
-                    if not relays[0].state:
-                        # TODO add some latency there if needed
-                        # time.sleep(2)  # 2sec latency
-                        turn_on_relay(relays[0])
             elif val == 0:
                 turn_off_relay(relays[0])
                 os.system('killall -15 mpv')
@@ -207,23 +221,23 @@ def on_data(data, sock, client_address):
             if (val < 256) and (val > 0):  # LED PWM 0-255
                 # sock.sendto(("LED set to -> " + strval).encode(), (client_address[0], 50001))
                 msg = "LED " + strval + "\n"
-                serial_port.write(msg)
-                ledSwtich = 1
-                ledValue = strval
+                serial_port.write(msg.encode())
+                ledSwitch = 1
+                ledValue = val
             elif val == 0:
                 # sock.sendto("LED TURNED OFF: value is set to 0".encode(), (client_address[0], 50001))
-                serial_port.write("LED 0\n")
-                ledSwtich = 0
+                serial_port.write("LED 0\n".encode())
+                ledSwitch = 0
                 ledValue = 0
         elif cmd[:3] == "REL":
             rel_no = int(cmd[3:5])  # cmd like REL05 for relays_no 00-99
             if rel_no == 0: # switch led
                 if val == 0:
-                    serial_port.write("REL 0\n")
-                    ledSwtich = 0
+                    serial_port.write("REL 0\n".encode())
+                    ledSwitch = 0
                 else:
-                    serial_port.write("REL 1\n")
-                    ledSwtich = 1
+                    serial_port.write("REL 1\n".encode())
+                    ledSwitch = 1
             else:
                 if val == 0:
                     turn_off_relay(relays[rel_no])
@@ -237,9 +251,20 @@ def on_data(data, sock, client_address):
     except ValueError:
         if msg == "STATUS":
             msg_to_sent = "status;"
-            msg_to_sent += str(ledSwtich) + ";" + str(ledValue) + ";"
+            msg_to_sent += str(ledSwitch) + ";"
+            if ledValue >= 100:
+                msg_to_sent += str(ledValue) + ";"
+            elif ledValue >= 10:
+                msg_to_sent += "0" + str(ledValue) + ";"
+            elif ledValue >= 0:
+                msg_to_sent += "00" + str(ledValue) + ";"
+            else:
+                msg_to_sent += "000;"
             for i in range(1, 10):
-                msg_to_sent += str(relays[i].state) + ";"
+                if (relays[i].state):
+                    msg_to_sent += "1;"
+                else:
+                    msg_to_sent += "0;"
             msg_to_sent += "movie;"
             msg_to_sent += str(movie)
             # send system state code: Status;rel1;rel2;...;movie;movie_number
@@ -248,6 +273,21 @@ def on_data(data, sock, client_address):
             # print("Oops!  That was no valid number.  Try again...")
             # sock.sendto("WRONG CODE!".encode(), (client_address[0], 50001))
 
+
+inputsFlags = [False, False, False, False, False, False, False, False, False, False]
+
+
+def check_switches():
+    global inputsFlags
+    global inputs
+    global relays
+    for i in range (1,10):
+        if gpio.input(inputs[i]) == 0:
+            inputsFlags[i] = False
+        elif inputsFlags[i] == False:
+            inputsFlags[i] = True
+            switch_relay(relays[i])
+        
 
 class ThreadedUDPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
@@ -262,13 +302,21 @@ class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer):
 
 # START SERVER
 try:
+    # time.sleep(60) # wait some time for Linux boot - needed while this script is loaded before network service!
     server = ThreadedUDPServer((PYTHON_SERVER_IP, PYTHON_SERVER_PORT), ThreadedUDPRequestHandler)
     server_thread = threading.Thread(target=server.serve_forever)
     server_thread.daemon = True
     server_thread.start()
     print("Server is running in thread: ", server_thread.name)
+    serial_port.write("LED 0\n".encode())
+    ledSwtich = 0
+    ledValue = 0
     while True:
-        pass
+        # on OrangePi there is no Event capture mechanism like capture rising edge interrupt
+        # as it is on RaspberryPi
+        # so you have to check periodically for any buttons change
+        check_switches()
+        # pass
         # time.sleep(20)
 finally:
     print("Shutting down Python server")
