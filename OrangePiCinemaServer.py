@@ -6,18 +6,20 @@ import os
 import time
 import serial  # install pySerial
 from pathlib import Path
-import RPi.GPIO as GPIO
 
-# using BCM GPIO 00..nn numbers
-GPIO.setmode(GPIO.BCM)  #/??
+# Install GPIO lib: https://github.com/duxingkei33/orangepi_PC_gpio_pyH3
+from pyA20.gpio import gpio  # OrangePI
+from pyA20.gpio import port  # OrangePI
+# import RPi.GPIO as GPIO    # RaspberryPI
+
+gpio.init()  # initialize the gpio module
 
 PYTHON_SERVER_PORT = 50000
-PYTHON_SERVER_IP = "127.0.0.1"  # Type there server's ip
+PYTHON_SERVER_IP = "192.168.200.50"  # Type there server's ip
 
-#TODO check TTY and pySerial
-serial_port = serial.Serial("/dev/serial0", baudrate=115200, timeout=1)  # init UART communication with Arduino S3 -> UART #3
+serial_port = serial.Serial("/dev/ttyS3", baudrate=115200, timeout=1)  # init UART communication with Arduino S3 -> UART #3
 
-os.system('killall -15 omxplayer')
+os.system('killall -15 mpv')
 home_dir = str(Path.home())  # get path to user's home directory or type there full path
 movie = 0   # movie number
 counter = 0  # for tests only
@@ -25,33 +27,31 @@ ledSwitch = 0   # LED relay status
 ledValue = 128  # LED PWM value
 
 """
-Relays for RaspberryPI
-Name         |     Role       |    GPIO
-relays[0]:   | ProjectorRelay | GPIO.18
-relays[1]:   | Relay 01       | GPIO.23
-relays[2]:   | Relay 02       | GPIO.24
-relays[3]:   | Relay 03       | GPIO.25
-relays[4]:   | Relay 04       | GPIO.08
-relays[5]:   | Relay 05       | GPIO.07
-relays[6]:   | Relay 06       | GPIO.12
-relays[7]:   | Relay 07       | GPIO.16
-relays[8]:   | Relay 08       | GPIO.20
-relays[9]:   | Relay 09       | GPIO.21
-
-Change relays values using 3.3V on switches
+Relays for OrangePI
+Name         |     Role       |    Port
+relays[0]:   | ProjectorRelay | port.PD14   
+relays[1]:   | Relay 01       | port.PC4 
+relays[2]:   | Relay 02       | port.PC7 
+relays[3]:   | Relay 03       | port.PA2 
+relays[4]:   | Relay 04       | port.PA21  
+relays[5]:   | Relay 05       | port.PA18 
+relays[6]:   | Relay 06       | port.PG8 
+relays[7]:   | Relay 07       | port.PG9 
+relays[8]:   | Relay 08       | port.PG6 
+relays[9]:   | Relay 09       | port.PG7 
 
 Inputs list (for manual switches):
-Name         |     Role       |    GPIO
+Name         |     Role       |    Port
 inputs[0]:   | Free           | 
-inputs[1]:   | Switch 01      | GPIO.04
-inputs[2]:   | Switch 02      | GPIO.17
-inputs[3]:   | Switch 03      | GPIO.27
-inputs[4]:   | Switch 04      | GPIO.22
-inputs[5]:   | Switch 05      | GPIO.05
-inputs[6]:   | Switch 06      | GPIO.06
-inputs[7]:   | Switch 07      | GPIO.13
-inputs[8]:   | Switch 08      | GPIO.19
-inputs[9]:   | Switch 09      | GPIO.26
+inputs[1]:   | Switch 01      | port.PA6 
+inputs[2]:   | Switch 02      | port.PA1 
+inputs[3]:   | Switch 03      | port.PA0 
+inputs[4]:   | Switch 04      | port.PA3  
+inputs[5]:   | Switch 05      | port.PA7 
+inputs[6]:   | Switch 06      | port.PA8 
+inputs[7]:   | Switch 07      | port.PA9 
+inputs[8]:   | Switch 08      | port.PA10 
+inputs[9]:   | Switch 09      | port.PA20  
 """
 
 
@@ -63,62 +63,60 @@ class Relay:
 
 # Relays list:
 relays = [
-    Relay(False, 18),
-    Relay(False, 23),
-    Relay(False, 24),
-    Relay(False, 25),
-    Relay(False, 8),
-    Relay(False, 7),
-    Relay(False, 12),
-    Relay(False, 16),
-    Relay(False, 20),
-    Relay(False, 21)]
+    Relay(False, port.PD14),
+    Relay(False, port.PC4),
+    Relay(False, port.PC7),
+    Relay(False, port.PA2),
+    Relay(False, port.PA21),
+    Relay(False, port.PA18),
+    Relay(False, port.PG8),
+    Relay(False, port.PG9),
+    Relay(False, port.PG6),
+    Relay(False, port.PG7)]
 
 # setup the relays ports
 for i in range(0, 10):
-    print("port " + str(i))
-    GPIO.setup(relays[i].port, GPIO.OUT)
-    GPIO.output(relays[i].port, GPIO.HIGH)
+    gpio.setcfg(relays[i].port, gpio.OUTPUT)
+    gpio.output(relays[i].port, gpio.HIGH)
 
 # Inputs (switches) list:
 inputs = [
     False,
-    4,
-    17,
-    27,
-    22,
-    5,
-    6,
-    13,
-    19,
-    26
+    port.PA6,
+    port.PA1,
+    port.PA0,
+    port.PA3,
+    port.PA7,
+    port.PA8,
+    port.PA9,
+    port.PA10,
+    port.PA20
 ]
 
 # setup the inputs ports
 for i in range(1, 10):
-    # PULL_DOWN - ster relays using 3.3V on switches
-    GPIO.setup(inputs[i], GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Enable pulldown resistor
-    # PULL_UP - ster relays using GND on switches
-    # GPIO.setup(inputs[i], GPIO.IN, pull_up_down=GPIO.PUD_UP) # Enable pullup resistor
+    gpio.setcfg(inputs[i], gpio.INPUT)
+    gpio.pullup(inputs[i], gpio.PULLDOWN)  # Enable pulldown resistor
+    # gpio.pullup(relays[i].port, gpio.PULLUP)
 
 
 def switch_relay(rel):
     if rel.state:
         rel.state = False
-        GPIO.output(rel.port, GPIO.HIGH)
+        gpio.output(rel.port, gpio.HIGH)
     else:
         rel.state = True
-        GPIO.output(rel.port, GPIO.LOW)
+        gpio.output(rel.port, gpio.LOW)
 
 
 def turn_on_relay(rel):
     rel.state = True
-    GPIO.output(rel.port, GPIO.LOW)
+    gpio.output(rel.port, gpio.LOW)
 
 
 def turn_off_relay(rel):
     rel.state = False
-    GPIO.output(rel.port, GPIO.HIGH)
+    gpio.output(rel.port, gpio.HIGH)
 
 
 def handle_preset(pst_no):
@@ -174,12 +172,12 @@ def movies(num):
     global movie
     global home_dir
     # This function runs in another thread
+    # mpv - orangePI player (for RaspberryPI use omxplayer)
     my_file = Path(home_dir + '/Videos/' + num + '.mp4')
     if my_file.is_file():
         movie = num
-        #TODO this function convert to omxplayer
         os.system(
-            'omxplayer --loop -o hdmi --blank --vol -200 --no-osd '
+            'mpv --loop --no-audio --no-sub --fullscreen --no-osc --osd-level=0 --term-osd=force '
             + home_dir + '/Videos/' + num + '.mp4')
     else:
         print("No such file")
@@ -198,7 +196,6 @@ def on_data(data, sock, client_address):
     global movie
     msg = data.decode("utf-8")
     # print("client_addr: ", client_address)
-    # print(msg)
     # sock.sendto(data, (client_address[0], 50001))     #ECHO SERVER
     try:
         cmd = msg[:msg.rindex(' ')]
@@ -213,15 +210,15 @@ def on_data(data, sock, client_address):
                         # add some latency there if needed
                         # time.sleep(2)  # 2sec latency
                         turn_on_relay(relays[0]) 
-                    os.system('killall -15 omxplayer')
+                    os.system('killall -15 mpv')
                     t = threading.Thread(target=movies(strval))
                     t.start()
             elif val == 0:
                 turn_off_relay(relays[0])
-                os.system('killall -15 omxplayer')
+                os.system('killall -15 mpv')
                 movie = 0
         elif cmd == "LED":
-            if (val < 256) and (val > 0):  # LED PWM 0-255 (cmd: "LED 128")
+            if (val < 256) and (val > 0):  # LED PWM 0-255
                 # sock.sendto(("LED set to -> " + strval).encode(), (client_address[0], 50001))
                 msg = "LED " + strval + "\n"
                 serial_port.write(msg.encode())
@@ -233,7 +230,7 @@ def on_data(data, sock, client_address):
                 ledSwitch = 0
                 ledValue = 0
         elif cmd[:3] == "REL":
-            rel_no = int(cmd[3:5])  # cmd like "REL01 1" for relays_no 00-99
+            rel_no = int(cmd[3:5])  # cmd like REL05 for relays_no 00-99
             if rel_no == 0: # switch led
                 if val == 0:
                     serial_port.write("REL 0\n".encode())
@@ -249,9 +246,7 @@ def on_data(data, sock, client_address):
                 elif val == 2:
                     switch_relay(relays[rel_no])
         elif cmd[:3] == "PST":
-            print("run PST")
-            preset_no = int(cmd[3:5])  # cmd like "PST05 00" for preset 00-99
-            print(preset_no)
+            preset_no = int(cmd[3:5])  # cmd like PST05 for preset 00-99
             handle_preset(preset_no)
     except ValueError:
         if msg == "STATUS":
@@ -287,7 +282,7 @@ def check_switches():
     global inputs
     global relays
     for i in range (1,10):
-        if GPIO.input(inputs[i]) == 0:
+        if gpio.input(inputs[i]) == 0:
             inputsFlags[i] = False
         elif inputsFlags[i] == False:
             inputsFlags[i] = True
@@ -317,7 +312,9 @@ try:
     ledSwtich = 0
     ledValue = 0
     while True:
-        # TODO change to button interrupt handler
+        # on OrangePi there is no Event capture mechanism like capture rising edge interrupt
+        # as it is on RaspberryPi
+        # so you have to check periodically for any buttons change
         check_switches()
         # pass
         # time.sleep(20)
@@ -325,4 +322,3 @@ finally:
     print("Shutting down Python server")
     server.shutdown()
     server.server_close()
-    GPIO.cleanup()
